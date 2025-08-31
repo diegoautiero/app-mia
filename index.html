@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Quit&Buy</title>
+  <meta name="theme-color" content="#22c55e"/>
+  <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+  <style>
+    html,body,#root{height:100%;margin:0}
+    body{background:linear-gradient(#0b1220,#000);color:#e5e7eb;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+    .card{background:rgba(15,23,42,.7);border:1px solid rgba(30,41,59,.8);border-radius:18px;padding:14px}
+    .btn{background:#22c55e;border:0;color:#000;padding:10px 14px;border-radius:12px;font-weight:600;cursor:pointer}
+    .inp{background:rgba(30,41,59,.7);border:1px solid rgba(51,65,85,.9);color:#e5e7eb;border-radius:12px;padding:10px;width:100%}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .muted{color:#94a3b8;font-size:12px}
+    .stat{background:rgba(2,6,23,.6);border:1px solid rgba(30,41,59,.8);border-radius:14px;padding:10px}
+    .bar{height:10px;background:rgba(51,65,85,.8);border-radius:999px;overflow:hidden}
+    .bar>div{height:10px;background:#22c55e}
+    a.link{color:#a5b4fc}
+    table{border-collapse:collapse;width:100%}
+    th,td{padding:8px 6px;border-bottom:1px solid rgba(30,41,59,.8)}
+    th{text-align:left;color:#cbd5e1;font-size:12px}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script type="text/javascript">
+    const { useState, useMemo, useEffect } = React;
+
+    function useLS(key, initialValue){
+      const [v,setV] = React.useState(()=>{
+        try{const t=localStorage.getItem(key);return t?JSON.parse(t):initialValue}catch(e){return initialValue}
+      });
+      React.useEffect(()=>{ try{localStorage.setItem(key, JSON.stringify(v))}catch(e){} },[key,v]);
+      return [v,setV];
+    }
+    const emptyGoal={title:'',price:0,url:'',image:''};
+    function round2(x){ const n = Number(x); return Number.isFinite(n)? Math.round((n+Number.EPSILON)*100)/100 : 0; }
+    function computeStreak(skips){
+      const days = new Set(skips.map(s => (s.ts||'').slice(0,10)));
+      let streak=0, cur=new Date();
+      for(;;){
+        const key = cur.toISOString().slice(0,10);
+        if(days.has(key)){ streak++; cur.setDate(cur.getDate()-1); } else break;
+      }
+      return streak;
+    }
+    const fmt = (x)=> Number(x).toFixed(2);
+
+    function App(){
+      const [profile,setProfile] = useLS('qb_profile',{cigsPerDay:10,costPerCig:0.5,currency:'€',startDate:new Date().toISOString()});
+      const [goal,setGoal]=useLS('qb_goal',emptyGoal);
+      const [skips,setSkips]=useLS('qb_skips',[]);
+      const [notes,setNotes]=useLS('qb_notes','');
+
+      const totalSkipped = useMemo(()=>skips.reduce((a,s)=>a+(Number(s.count)||0),0),[skips]);
+      const savedMoney  = useMemo(()=>round2(totalSkipped * Number(profile.costPerCig||0)),[totalSkipped,profile.costPerCig]);
+      const progress    = useMemo(()=>!goal.price?0:Math.min(100,Math.round((Number(savedMoney)/Number(goal.price))*100)),[savedMoney,goal.price]);
+
+      const remaining = useMemo(()=>{
+        const need = Number(goal.price||0) - Number(savedMoney||0);
+        return need>0 ? round2(need) : 0;
+      },[goal.price,savedMoney]);
+
+      const perDay = useMemo(()=> round2(Number(profile.cigsPerDay||0)*Number(profile.costPerCig||0)),[profile.cigsPerDay,profile.costPerCig]);
+      const etaDays = useMemo(()=> (remaining<=0||perDay<=0)?0:Math.ceil(remaining/perDay), [remaining,perDay]);
+
+      const todayKey = new Date().toISOString().slice(0,10);
+      const todaySkipped = useMemo(()=>skips.filter(s=>(s.ts||'').slice(0,10)===todayKey).reduce((a,b)=>a+Number(b.count||0),0),[skips]);
+      const dailyTarget = Number(profile.cigsPerDay||0);
+      const dailyPct = dailyTarget>0? Math.min(100, Math.round((todaySkipped/dailyTarget)*100)) : 0;
+      const streak = useMemo(()=>computeStreak(skips),[skips]);
+
+      function addSkip(n=1){ const num=Number(n); if(!Number.isFinite(num)||num<=0)return; setSkips(p=>[...p,{ts:new Date().toISOString(),count:num}]); }
+      function undoLast(){ setSkips(p=>p.slice(0,-1)); }
+
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement('div',{style:{maxWidth:960, margin:'0 auto', padding:'16px 12px 80px'}},
+          React.createElement('h1',{style:{display:'flex',alignItems:'center',gap:8}}, React.createElement('span',null,'💨'),' Quit&Buy'),
+          React.createElement('p',{className:'muted'}, 'Smetti + risparmia = premiati'),
+
+          React.createElement('div',{className:'row',style:{marginTop:12}},
+            // left
+            React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+              React.createElement('div',{className:'card'},
+                React.createElement('h3',null,'Le tue abitudini'),
+                React.createElement('label',{className:'muted'},'Sigarette al giorno'),
+                React.createElement('input',{className:'inp',type:'number',value:profile.cigsPerDay,onChange:e=>setProfile({...profile,cigsPerDay:Number(e.target.value)})}),
+                React.createElement('label',{className:'muted'},`Costo per sigaretta (${profile.currency})`),
+                React.createElement('input',{className:'inp',type:'number',step:'0.01',value:profile.costPerCig,onChange:e=>setProfile({...profile,costPerCig:Number(e.target.value)})}),
+                React.createElement('label',{className:'muted'},'Valuta'),
+                React.createElement('select',{className:'inp',value:profile.currency,onChange:e=>setProfile({...profile,currency:e.target.value})},
+                  React.createElement('option',null,'€'),React.createElement('option',null,'$'),React.createElement('option',null,'£')
+                ),
+              ),
+              React.createElement('div',{className:'card'},
+                React.createElement('h3',null,'Obiettivo da comprare'),
+                React.createElement('label',{className:'muted'},'Nome prodotto'),
+                React.createElement('input',{className:'inp',value:goal.title,onChange:e=>setGoal({...goal,title:e.target.value})}),
+                React.createElement('div',{className:'row'},
+                  React.createElement('div',null,
+                    React.createElement('label',{className:'muted'},`Prezzo (${profile.currency})`),
+                    React.createElement('input',{className:'inp',type:'number',step:'0.01',value:goal.price,onChange:e=>setGoal({...goal,price:Number(e.target.value)})}),
+                  ),
+                  React.createElement('div',null,
+                    React.createElement('label',{className:'muted'},'Link (Amazon o altro)'),
+                    React.createElement('input',{className:'inp',value:goal.url,onChange:e=>setGoal({...goal,url:e.target.value})}),
+                  )
+                ),
+                React.createElement('label',{className:'muted'},'URL immagine (opzionale)'),
+                React.createElement('input',{className:'inp',value:goal.image,onChange:e=>setGoal({...goal,image:e.target.value})}),
+                goal.price>0 && React.createElement(React.Fragment,null,
+                  React.createElement('div',{className:'bar',style:{marginTop:8}}, React.createElement('div',{style:{width:progress+'%'}})),
+                  React.createElement('div',{className:'muted'},`Sei al ${progress}% – Risparmi: ${profile.currency} ${fmt(savedMoney)}`)
+                )
+              ),
+              React.createElement('div',{className:'card'},
+                React.createElement('h3',null,'Note / Motivazione'),
+                React.createElement('textarea',{className:'inp',rows:5,value:notes,onChange:e=>setNotes(e.target.value),placeholder:'La mia motivazione...'})
+              )
+            ),
+            // right
+            React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+              React.createElement('div',{className:'card'},
+                React.createElement('h3',null,'Salvadanaio'),
+                React.createElement('div',{className:'row'},
+                  React.createElement('div',{className:'stat'}, React.createElement('div',{className:'muted'},'Risparmi totali'), React.createElement('div',{style:{fontSize:22,fontWeight:700}},`${profile.currency} ${fmt(savedMoney)}`)),
+                  React.createElement('div',{className:'stat'}, React.createElement('div',{className:'muted'},'Streak giorni positivi'), React.createElement('div',{style:{fontSize:22,fontWeight:700}},`${streak} 🔥`))
+                ),
+                React.createElement('div',{style:{marginTop:12}},
+                  React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                    React.createElement('div',null, React.createElement('div',{className:'muted'},'Oggi'), React.createElement('div',{style:{fontWeight:700}},`${todaySkipped} sigarette evitate`)),
+                    React.createElement('div',{className:'muted'},`Obiettivo: ${dailyTarget}`)
+                  ),
+                  React.createElement('div',{className:'bar',style:{marginTop:6}}, React.createElement('div',{style:{width:dailyPct+'%'}})),
+                  goal.price>0 && React.createElement('div',{className:'muted',style:{marginTop:8}},
+                    remaining>0 ? `Ti mancano ${profile.currency} ${fmt(remaining)}${perDay>0? ' • ≈ '+etaDays+' giorni' : ''}` : 'Hai raggiunto l’obiettivo! 🎉'
+                  ),
+                  React.createElement('div',{style:{display:'grid',gridTemplateColumns:'2fr 1fr',gap:8, marginTop:10}},
+                    React.createElement('button',{className:'btn',onClick:()=>addSkip(1)},'+1 Sigaretta evitata'),
+                    React.createElement('button',{className:'btn',style:{background:'#64748b',color:'#fff'},onClick:undoLast},'Annulla')
+                  )
+                ),
+                goal.url && React.createElement('p',{style:{marginTop:10}}, React.createElement('a',{className:'link',href:goal.url,target:'_blank',rel:'noreferrer'},'Vai al prodotto ↗')),
+                goal.image && React.createElement('img',{src:goal.image,alt:'goal',style:{width:120,height:120,objectFit:'cover',borderRadius:12,marginTop:8}})
+              ),
+              React.createElement('div',{className:'card'},
+                React.createElement('h3',null,'Storico'),
+                skips.length===0 ? React.createElement('p',{className:'muted'},'Ancora nessun dato. Inizia oggi! 💪') :
+                React.createElement('table',null,
+                  React.createElement('thead',null, React.createElement('tr',null,
+                    React.createElement('th',null,'Data'), React.createElement('th',null,'Skip'), React.createElement('th',null,'€'), React.createElement('th',null,''))),
+                  React.createElement('tbody',null,
+                    [...skips].sort((a,b)=>new Date(b.ts)-new Date(a.ts)).map((s,i)=>{
+                      const idx = skips.indexOf(s);
+                      return React.createElement('tr',{key:s.ts+i},
+                        React.createElement('td',null,new Date(s.ts).toLocaleString()),
+                        React.createElement('td',null, React.createElement('input',{className:'inp',type:'number',value:s.count,onChange:e=>{ const next=[...skips]; next[idx]={...next[idx],count:Math.max(0,Number(e.target.value))}; setSkips(next); },style:{maxWidth:80}})),
+                        React.createElement('td',null, `${profile.currency} ${fmt(round2((Number(s.count)||0)*Number(profile.costPerCig||0)))}`),
+                        React.createElement('td',null, React.createElement('button',{className:'btn',style:{background:'#ef4444',color:'#fff'},onClick:()=>{ const next=skips.filter((_,ii)=>ii!==idx); setSkips(next); }},'Elimina'))
+                      );
+                    })
+                  )
+                )
+              )
+            )
+          )
+        )
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+</body>
+</html>
